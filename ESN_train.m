@@ -40,47 +40,106 @@ switch lower(tr_struct.mode)
     alph = tr_struct.alph;
     k = tr_struct.k;
     W_out(1:L,1:N) ...
-      = (2*rand(L,N)-1)*0.001;
+      = (2*rand(L,N)-1)*0.01;
     ise = zeros(Ntrain,1);
     %     y_log = zeros(Ntrain,1);
     y_hat = zeros(L,k);
-    for i = st_i:k:(stop_i-k+1)
-      %       keyboard
-      y_hat = W_out(1:L,1:N) ...
-        * X(1:N,i:(i+k-1));
-      W_out(1:L,1:N) ...
-        = (1-alph*2*lambda) ...
-        * W_out(1:L,1:N) ...
-        + 2*lambda/k*(y(1:L,i:(i+k-1))...
-        - y_hat)*X(1:N,i:(i+k-1)).';
-      grad = 2/k*(y(1:L,i:(i+k-1))...
-        - y_hat)*X(1:N,i:(i+k-1)).';
-      slope = -grad*grad.';
-      tau = 0.5;
-      c = 0.5;
+    switch tr_struct.bat_mode
+      case 'snapshot'
+        step = 1;
+      case 'normal'
+        step = k;
+    end
+    for i = st_i:step:(stop_i-k+1)
+      % Different methods for weight
+      % updating
+      switch lower(tr_struct.lrn_mode)
+        case 'fixed'
+          % Uses the local lambda var
+          % Uses the same step size
+          % on each iteration.
+          y_hat = W_out(1:L,1:N) ...
+            * X(1:N,i:(i+k-1));
+          W_out(1:L,1:N) ...
+            = (1-alph*2*lambda) ...
+            * W_out(1:L,1:N) ...
+            + 2*lambda/k*(y(1:L,i:(i+k-1))...
+            - y_hat)*X(1:N,i:(i+k-1)).';
+        case 'exact'
+          % Ignores local lambda var
+          % Calculates step size
+          % to minimize the RISE
+          % along the gradient
+          % direction on each cycle
+          y_hat = W_out(1:L,1:N) ...
+            * X(1:N,i); % instantaneous
+          
+          grad = 2/k*(W_out(1:L,1:N) ...
+            * X(1:N,i:(i+k-1))...
+            - y(1:L,i:(i+k-1))) ...
+            * X(1:N,i:(i+k-1)).' ...
+            + 2*alph*W_out; % accumulate
+          
+          l_star = 1/2 ...
+            * (2*alph*W_out(:)'*grad(:)...
+            + 2*(y_hat-y(1:L,i))'...
+            * (grad*X(1:N,i)))...
+            /((grad*X(1:N,i))'...
+            * (grad*X(1:N,i))...
+            + alph*grad(:)'*grad(:));
+          if l_star < 0
+            warning('constraint violated - possibly diverging');
+%             keyboard
+          end
+          W_out(1:L,1:N) =...
+            W_out(1:L,1:N)...
+            - l_star * grad;
+        case 'armillo'
+          % Uses two local params
+          % Set to powers of two
+          % to ease HW implementation
+          %
+          % Iterate until finding
+          % step size that decreases
+          % the RISE 'sufficiently',
+          % judged by Armillo condition
+          % Do this on each cycle
+          tau = 0.5;
+          c = 0.5;
+          slope = -grad*grad.';
+        otherwise
+          error('Not supported.');
+          
+      end
+%       W_out(1:L,1:N) ...
+%         = (1-alph*2*lambda) ...
+%         * W_out(1:L,1:N) ...
+%         + 2*lambda/k*(y(1:L,i:(i+k-1))...
+%         - y_hat)*X(1:N,i:(i+k-1)).';
+
       ise_x = norm(y_hat...
         - y(1:L,i:(i+k-1)),2).^2 ...
-        - +alph*norm(W_out,'fro').^2;
-      
-      keyboard
+        + alph*norm(W_out,'fro').^2;
+%       disp(ise_x); disp(l_star);
+%       keyboard
       
       %       fprintf('sgd: iter %d of %d\n',...
       %         i-st_i+1, Ntrain);
-      ise((i-burn_in-1)/k+1) ...
+      ise((i-burn_in-1)/step+1) ...
         = norm(y_hat...
-        - y(1:L,i:(i+k-1)),2).^2 ...
+        - y(1:L,i),2).^2 ...
         + alph*norm(W_out,'fro').^2;
       %       y_log(i-st_i+1) = mean(y_hat);
       W_log(:,i-st_i+1) = W_out.';
       
     end
     % Q tests each set of intermediate weights' generalization performance
-    Q = W_log.'*X(:,stop_i+1:end)  - repmat(y(stop_i+1:end),size(W_log,2),1);
-    figure(1);
-    plot(diag(Q*Q')); set(gca,'yscale','log');
-    figure(2);
-    plot(ise); set(gca,'yscale','log');
-    keyboard
+%     Q = W_log.'*X(:,stop_i+1:end)  - repmat(y(stop_i+1:end),size(W_log,2),1);
+%     figure(1);
+%     plot(diag(Q*Q')); set(gca,'yscale','log');
+%     figure(2);
+%     plot(ise); set(gca,'yscale','log');
+%     keyboard
 %     disp( min(ise) );
 %     plot(ise);
 %     keyboard

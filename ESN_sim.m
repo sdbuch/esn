@@ -2,28 +2,28 @@
 clear all;
 close all;
 %% Parameters
-N = 2000;
+N = 100;
 M = 1;
 L = 1;
-pr = 0.1;
+pr = [0.05];
 vvv = [1e3 1e2 1e1 1 1e-1 1e-2 1e-3 1e-4 1e-5 1e-6 1e-7 1e-8 1e-9];
-alph = [2 4 8 16];
+alph = 10;
 batch_size = 1;
-lambda = [2^-8 2^-9 2^-10 2^-11 2^-12];
-sr = 0.9;
+lambda = 1e-4;
+sr = [0.1];
 distrib = {@rand}; %must be cell                     % name of function for random numbers
 nonlin = {@tanh};
 
 %% Test data
 % test task - nonlinear transform
 T = (pi/3)*1e-2;% make irrational for easy noncyclicality
-ppp = 40;       % points per period
-Nper = 40;      % num periods
+ppp = 41;       % points per period
+Nper = 30;      % num periods
 Nt = ppp*Nper;
 dt = T*Nper/Nt;
 t = 0:dt:T*Nper-dt;
-u = (cos(2*pi/T*t)*0.5);
-y = (u.^3);
+u = (cos(2*pi/T*t));
+y = (u.^3)./(max(u.^3));
 
 %% Main loop
 % allocate memory
@@ -46,6 +46,8 @@ tr_struct.burn_in = floor(0.05*Nt);
 tr_struct.Ntrain = ...
   floor(Nt/2)- tr_struct.burn_in;
 tr_struct.mode = 'sgd';
+tr_struct.lrn_mode = 'exact';
+tr_struct.bat_mode = 'snapshot';
 % END USER PARAMS
 tr_i = ...
   tr_struct.burn_in ...
@@ -200,7 +202,7 @@ data_redim(data_redim > 100) = 100;
 RISE_plots = false;
 MSE_plots = false;
 MSE_plots_normal = false;
-test_plots = false;
+test_plots = true;
 
 if RISE_plots
   % only works if the vector input
@@ -254,7 +256,7 @@ end
 if test_plots
   figure
   t_test = t(tr_i:end);
-  plot(t_test, y_test);
+  stem(t_test, y_test);
   hold on;
   stem(t_test,y_hat, 'r');
   hold off;
