@@ -42,7 +42,7 @@ switch lower(tr_struct.mode)
     W_out(1:L,1:N) ...
       = (2*rand(L,N)-1)*0.01;
     ise = zeros(Ntrain,1);
-    %     y_log = zeros(Ntrain,1);
+    
     y_hat = zeros(L,k);
     switch tr_struct.bat_mode
       case 'snapshot'
@@ -89,7 +89,6 @@ switch lower(tr_struct.mode)
             + alph*grad(:)'*grad(:));
           if l_star < 0
             warning('constraint violated - possibly diverging');
-%             keyboard
           end
           W_out(1:L,1:N) =...
             W_out(1:L,1:N)...
@@ -107,46 +106,53 @@ switch lower(tr_struct.mode)
           tau = 0.5;
           c = 0.5;
           slope = -grad*grad.';
+          error('Not supported.');
         otherwise
           error('Not supported.');
           
       end
-%       W_out(1:L,1:N) ...
-%         = (1-alph*2*lambda) ...
-%         * W_out(1:L,1:N) ...
-%         + 2*lambda/k*(y(1:L,i:(i+k-1))...
-%         - y_hat)*X(1:N,i:(i+k-1)).';
 
-      ise_x = norm(y_hat...
-        - y(1:L,i:(i+k-1)),2).^2 ...
-        + alph*norm(W_out,'fro').^2;
-%       disp(ise_x); disp(l_star);
-%       keyboard
-      
-      %       fprintf('sgd: iter %d of %d\n',...
-      %         i-st_i+1, Ntrain);
+      % Save the running ISE
       ise((i-burn_in-1)/step+1) ...
         = norm(y_hat...
         - y(1:L,i),2).^2 ...
         + alph*norm(W_out,'fro').^2;
-      %       y_log(i-st_i+1) = mean(y_hat);
-      W_log(:,i-st_i+1) = W_out.';
-      
+            
     end
-    % Q tests each set of intermediate weights' generalization performance
-%     Q = W_log.'*X(:,stop_i+1:end)  - repmat(y(stop_i+1:end),size(W_log,2),1);
-%     figure(1);
-%     plot(diag(Q*Q')); set(gca,'yscale','log');
-%     figure(2);
-%     plot(ise); set(gca,'yscale','log');
-%     keyboard
-%     disp( min(ise) );
-%     plot(ise);
-%     keyboard
     if nargout > 1
       log = ise;
     end
   otherwise
     error('Not supported.');
+end
+
+if 0
+  % Diagnostic code dumped here.
+  % This logs vector valued W_outs
+  % for analysis with Q
+  W_log(:,i-st_i+1) = W_out.';
+  
+  % Q tests each set of intermediate weights' generalization performance
+  Q = W_log.'*X(:,stop_i+1:end)  - repmat(y(stop_i+1:end),size(W_log,2),1);
+  figure(1);
+  plot(diag(Q*Q')); set(gca,'yscale','log');
+  figure(2);
+  plot(ise); set(gca,'yscale','log');
+  keyboard
+  disp( min(ise) );
+  plot(ise);
+  keyboard
+  
+  % This stores the running output
+  % of the ESN during training
+  y_log = zeros(Ntrain,1);
+  y_log(i-st_i+1) = mean(y_hat);
+  
+  % This calculates the ISE at each step
+  ise_x = norm(y_hat...
+    - y(1:L,i:(i+k-1)),2).^2 ...
+    + alph*norm(W_out,'fro').^2;
+  disp(ise_x); disp(l_star);
+  keyboard
 end
  

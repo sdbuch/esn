@@ -3,8 +3,8 @@ clear all;
 close all;
 %% Parameters
 N = 100;
-M = 1;
-L = 1;
+M = 5;
+L = 5;
 pr = [0.05];
 vvv = [1e3 1e2 1e1 1 1e-1 1e-2 1e-3 1e-4 1e-5 1e-6 1e-7 1e-8 1e-9];
 alph = 10;
@@ -18,12 +18,23 @@ nonlin = {@tanh};
 % test task - nonlinear transform
 T = (pi/3)*1e-2;% make irrational for easy noncyclicality
 ppp = 41;       % points per period
-Nper = 30;      % num periods
+Nper = 50;      % num periods
 Nt = ppp*Nper;
 dt = T*Nper/Nt;
 t = 0:dt:T*Nper-dt;
 u = (cos(2*pi/T*t));
-y = (u.^3)./(max(u.^3));
+% Example:
+% Restructure the input into M channels
+Nt = Nt/L;
+u = reshape(u,M,[]);
+if size(u,1) ~= M
+  error('Reformat input to match input layer parameter M');
+end
+y = (u.^3)./(max(max(u.^3)));
+y = reshape(y(:),L,[]);
+if size(y,1) ~= L
+  error('Reformat output to match output layer parameter L');
+end
 
 %% Main loop
 % allocate memory
@@ -54,7 +65,7 @@ tr_i = ...
   + tr_struct.Ntrain ...
   + 1;
 y_hat = zeros(L, Nt - tr_i + 1);
-y_test = y(tr_i:end);
+y_test = y(:,tr_i:end);
 data_sgd = zeros(length(N), length(M), ...
   length(L), length(pr), ...
   length(distrib), length(sr), ...
@@ -255,10 +266,11 @@ end
 
 if test_plots
   figure
-  t_test = t(tr_i:end);
-  stem(t_test, y_test);
+  t_test = reshape(t,L,[]);
+  t_test = t_test(:,tr_i:end);
+  stem(t_test(:), y_test(:));
   hold on;
-  stem(t_test,y_hat, 'r');
+  stem(t_test(:),y_hat(:), 'r');
   hold off;
 end
 
