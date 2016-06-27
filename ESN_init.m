@@ -20,6 +20,8 @@ if ~exist('w_struct','var')
   N = 1000;
   M = 1;
   L = 1;
+  ff = false;
+  fb = false;
 else
   if ~isfield(w_struct,'N')
     N = 1000;
@@ -38,6 +40,18 @@ else
     % num in output
   else
     L = w_struct.L;
+  end
+  if ~isfield(w_struct,'ff')
+    ff = false;
+    % weight feedforward enabled
+  else
+    ff = w_struct.ff;
+  end
+  if ~isfield(w_struct,'fb')
+    fb = false;
+    % weight feedback enabled
+  else
+    fb = w_struct.fb;
   end
 end
 
@@ -69,16 +83,21 @@ end
 W(1:N,1:N) = ...
   ( rand(N,N)<p )...
   .* (2*distrib(N,N)-1);% reservoir
+if trace(W) == 0
+  % A nilpotent W has all zero eigenvalues
+  % If the spectral radius is zero,
+  % the reservoir may not have any computational power
+  warning('caution: W may be nilpotent');
+end
 E = eig(W);
 r_sr = max(abs(E));
 W = sr .* (W./r_sr);
-if nargout > 1
-  W_out(1:L,1:N) = zeros(L,N);
-  if nargout > 2
-    W_in(1:N,1:M) = (2*distrib(N,M)-1);
-    if nargout > 3
-      W_fb(1:N,1:L)=(2*distrib(N,L)-1);
-    end
-  end
+% NOTE: W_OUT IS INITIALIZED
+% IN THE TRAINING FUNCTION
+
+W_in(1:N,1:M) = (2*distrib(N,M)-1);
+if fb
+  W_fb(1:N,1:L)=(2*distrib(N,L)-1);
 end
+
 

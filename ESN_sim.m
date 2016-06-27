@@ -1,70 +1,100 @@
 %% Simulate an echo state network
+% @TODO: Refactor the code from this
+% inflexible format to a task scheduler
+% type of format. A front-end takes
+% all the user param settings and
+% organizes them into discrete tasks,
+% then runs each task through this
+% type of loop framework for simulation
 clear all;
 close all;
 %% Parameters
-N = 100;
-M = 5;
-L = 5;
+N = [1000];
+M = 1;
+L = 1;
 pr = [0.05];
 vvv = [1e3 1e2 1e1 1 1e-1 1e-2 1e-3 1e-4 1e-5 1e-6 1e-7 1e-8 1e-9];
-alph = 10;
+alph = [1e-1 1e-2 1e-3 1e-4 1e-5 1e-6 1e-7 1e-8 1e-9];
 batch_size = 1;
 lambda = 1e-4;
-sr = [0.1];
+sr = 0.1;
 distrib = {@rand}; %must be cell                     % name of function for random numbers
 nonlin = {@tanh};
 
 %% Test data
 % test task - nonlinear transform
 T = (pi/3)*1e-2;% make irrational for easy noncyclicality
-ppp = 41;       % points per period
-Nper = 50;      % num periods
+ppp = 21;       % points per period
+Nper = 40;      % num periods
 Nt = ppp*Nper;
 dt = T*Nper/Nt;
 t = 0:dt:T*Nper-dt;
-u = (cos(2*pi/T*t));
+u = (cos(2*pi/T*t)*0.5);
 % Example:
 % Restructure the input into M channels
-Nt = Nt/L;
-u = reshape(u,M,[]);
-if size(u,1) ~= M
+Nt = Nt/L(1);
+u = reshape(u,M(1),[]);
+if size(u,1) ~= M(1)
   error('Reformat input to match input layer parameter M');
 end
-y = (u.^3)./(max(max(u.^3)));
-y = reshape(y(:),L,[]);
-if size(y,1) ~= L
+y = (u.^3);
+y = reshape(y(:),L(1),[]);
+if size(y,1) ~= L(1)
   error('Reformat output to match output layer parameter L');
 end
+u = cat(1,u,...
+  zeros(max(M)-size(u,1),size(u,2)));
+y = cat(1,y,...
+  zeros(max(L)-size(y,1),size(y,2)));
 
-%% Main loop
-% allocate memory
-W = zeros(max(N),max(N));
-W_out = zeros(max(L),max(N));
-W_in = zeros(max(N),max(M));
-X = zeros(max(N),Nt);
-data = zeros(length(N), length(M), ...
-  length(L), length(pr), ...
-  length(distrib), length(sr), ...
-  length(nonlin), length(alph),...
-  length(lambda));
-
-% Programming parameters
+%% Setup before main loop
+%% Programming parameters
 w_struct = [];
 pr_struct = [];
 tr_struct = [];
-% USER PARAMS BELOW
+%% USER PARAMS BELOW: NETWORK
+w_struct.ff = true; %input feedforward to output layer
+w_struct.fb = false;%output feedback to reservoir
+%% USER PARAMS BELOW: TRAINING
 tr_struct.burn_in = floor(0.05*Nt);
 tr_struct.Ntrain = ...
   floor(Nt/2)- tr_struct.burn_in;
 tr_struct.mode = 'sgd';
 tr_struct.lrn_mode = 'exact';
 tr_struct.bat_mode = 'snapshot';
-% END USER PARAMS
+%% END USER PARAMS
+%% System params
+% allocate memory
+if w_struct.ff
+  W = zeros(max(N)+max(M),...
+    max(N)+max(M));
+  W_out = zeros(max(L),max(N)+max(M));
+  W_in = zeros(max(N)+max(M),max(M));
+  W_fb = zeros(max(N)+max(M),max(L));
+else
+  W = zeros(max(N),max(N));
+  W_out = zeros(max(L),max(N));
+  W_in = zeros(max(N),max(M));
+  W_fb = zeros(max(N),max(L));
+end
+data = zeros(length(N), length(M), ...
+  length(L), length(pr), ...
+  length(distrib), length(sr), ...
+  length(nonlin), length(alph),...
+  length(lambda));
+% internal variables
+N = sort(N);
+M = sort(M);
+L = sort(L);
+alph = sort(alph);
+lambda = sort(lambda);
+batch_size = sort(batch_size);
+sr = sort(sr);
 tr_i = ...
   tr_struct.burn_in ...
   + tr_struct.Ntrain ...
   + 1;
-y_hat = zeros(L, Nt - tr_i + 1);
+tr_struct.ff = w_struct.ff;
 y_test = y(:,tr_i:end);
 data_sgd = zeros(length(N), length(M), ...
   length(L), length(pr), ...
@@ -72,7 +102,15 @@ data_sgd = zeros(length(N), length(M), ...
   length(nonlin), length(alph),...
   length(lambda), length(batch_size), ...
   tr_struct.Ntrain);
+if tr_struct.ff
+  X = zeros(max(M)+max(N),Nt);
+else
+  X = zeros(max(N),Nt);
+end
+y_hat = zeros(max(L),Nt-tr_i+1);
 
+
+%% Main loop
 for i = 1:length(N)
   for j = 1:length(M)
     for k = 1:length(L)
@@ -80,8 +118,9 @@ for i = 1:length(N)
       w_struct.M = M(j);
       w_struct.L = L(k);
       tr_struct.size_N = N(i);
+      tr_struct.size_M = M(j);
       tr_struct.size_L = L(k);
-      
+  
       for m = 1:length(pr)
         for n = 1:length(distrib)
           pr_struct.p = pr(m);
@@ -89,23 +128,38 @@ for i = 1:length(N)
             distrib{n};
           for o = 1:length(sr)
             % Get ESN
-            [W,W_out,W_in]=...
+            [W,W_out,W_in,W_fb]=...
               ESN_init(...
               sr(o),w_struct,...
               pr_struct,W,W_out,...
-              W_in);
+              W_in,W_fb);
             % Get states
             for p = 1:length(...
                 nonlin)
-              X = ESN_evolve(X,...
-                W,W_in,u,nonlin{p});
-              for q = 1:length(alph)
-                % Train output weights
-                tr_struct.alph = ...
-                  alph(q);
-                if strcmp(...
-                    tr_struct.mode,...
-                    'sgd')
+              % Check to see if we are
+              %  running in a feedback
+              % or non-feedback mode
+              
+              if w_struct.fb
+                % Feedback execution mode.
+                % Process the reservoir
+                %  in two sections: training
+                %  period (give ideal outputs),
+                %  and testing period (give
+                %  outputs given trained weights)
+                
+                % Get training period states
+                w_struct.run_idxs...
+                  = [1, (tr_struct.Ntrain...
+                  + tr_struct.burn_in)];
+                
+                X = ESN_evolve(X,...
+                  W,W_in,u,nonlin{p},...
+                  W_fb,y,w_struct);
+                for q = 1:length(alph)
+                  % Train output weights
+                  tr_struct.alph = ...
+                    alph(q);
                   for r=1:length(lambda)
                     tr_struct.lr = ...
                       lambda(r);
@@ -114,18 +168,31 @@ for i = 1:length(N)
                         batch_size(s);
                       [W_out,rise]=ESN_train(...
                         tr_struct,X,y,W_out);
+                      
                       % Compute predicted
                       % output on test set
-                      y_hat(:,:) = ...
-                        W_out*X(:,tr_i:end);
+                      % Because feedback weights
+                      % may be used, need to run
+                      % in real-time
+                      y_hat(:,1) = ...
+                        W_out*X(:,tr_i-1);
+                      w_struct.run_idxs...
+                        = [tr_i, size(X,2)];
+                      [X, y_hat]...
+                        = ESN_evolve_rt(X,W,W_in,...
+                        W_out,u,nonlin{p},W_fb,...
+                        y_hat,w_struct);
+                      
                       % Compute scalar data
                       data(i,j,k,m, ...
                         n,o,p,q,r,s) = ...
                         norm(y_test-y_hat, ...
                         2).^2 / ...
                         length(y_test);
-                      data_sgd(i,j,k,m,n,o,...
-                        p,q,r,s,:) = rise;
+                      if strcmp(tr_struct.mode,'sgd')
+                        data_sgd(i,j,k,m,n,o,...
+                          p,q,r,s,:) = rise;
+                      end
                       if ~~(length(batch_size)-1)
                         fprintf('Done batch, %d of %d\n', ...
                           s, length(batch_size));
@@ -136,26 +203,65 @@ for i = 1:length(N)
                         r, length(lambda));
                     end
                   end
-
-                else
-                  W_out=ESN_train(...
-                    tr_struct,X,y,W_out);
-                  % Compute predicted
-                  % output on test set
-                  y_hat(:,:) = ...
-                    W_out*X(:,tr_i:end);
-                  % Compute scalar data
-                  data(i,j,k,m, ...
-                    n,o,p,q,1) = ...
-                    norm(y_test-y_hat, ...
-                    2).^2 / ...
-                    length(y_test);
+                  if ~~(length(alph)-1)
+                    fprintf('Done alph, %d of %d\n', ...
+                      q, length(alph));
+                  end
                 end
-                if ~~(length(alph)-1)
-                  fprintf('Done alph, %d of %d\n', ...
-                    q, length(alph));
+              else
+                
+                % non-output-feedback network mode
+                % Grab all states at once
+                w_struct.run_idxs...
+                  = [1, size(X,2)];
+                X = ESN_evolve(X,...
+                  W,W_in,u,nonlin{p},...
+                  W_fb,y,w_struct);
+                for q = 1:length(alph)
+                  % Train output weights
+                  tr_struct.alph = ...
+                    alph(q);
+                  for r=1:length(lambda)
+                    tr_struct.lr = ...
+                      lambda(r);
+                    for s = 1:length(batch_size)
+                      tr_struct.k = ...
+                        batch_size(s);
+                      [W_out,rise]=ESN_train(...
+                        tr_struct,X,y,W_out);
+                      % Compute predicted
+                      % output on test set
+                      
+                      y_hat(:,:) = ...
+                        W_out*X(:,tr_i:end);
+                      % Compute scalar data
+                      data(i,j,k,m, ...
+                        n,o,p,q,1) = ...
+                        norm(y_test-y_hat, ...
+                        2).^2 / ...
+                        length(y_test);
+                      if strcmp(tr_struct.mode,'sgd')
+                        data_sgd(i,j,k,m,n,o,...
+                          p,q,r,s,:) = rise;
+                      end
+                      if ~~(length(batch_size)-1)
+                        fprintf('Done batch, %d of %d\n', ...
+                          s, length(batch_size));
+                      end
+                    end
+                    if ~~(length(lambda)-1)
+                      fprintf('Done lambda, %d of %d\n', ...
+                        r, length(lambda));
+                    end
+                  end
+                  
+                  if ~~(length(alph)-1)
+                    fprintf('Done alph, %d of %d\n', ...
+                      q, length(alph));
+                  end
                 end
               end
+              
               if ~~(length(nonlin)-1)
                 fprintf('Done nonlin, %d of %d\n', ...
                   p, length(nonlin));
@@ -186,18 +292,19 @@ for i = 1:length(N)
         j, length(M));
     end
   end
-  % wipeout W for sparse pattern
-%   for q = 1:N
-%     for qq = 1:N
-%       W(q,qq) = 0;
-%     end
-%   end
+  %  wipeout W for sparse pattern
+  for i1 = 1:size(W,1)
+    for i2 = 1:size(W,2)
+      W(i1,i2) = 0;
+    end
+  end
   if ~~(length(N)-1)
     fprintf('Done N, %d of %d\n', ...
       i, length(N));
   end
 end
 
+%% Process output data hypercube
 % In squeeze(data_sgd) with only
 % lambda and alpha dims nonsingleton:
 % - The rows are diff alpha
@@ -210,6 +317,8 @@ sgd_at_convergence(sgd_at_convergence ...
   > 100) = 100;
 data_redim(data_redim > 100) = 100;
 
+
+%% Plot outputs
 RISE_plots = false;
 MSE_plots = false;
 MSE_plots_normal = false;
@@ -246,7 +355,7 @@ end
 
 if MSE_plots
   figure
-  mesh(lambda, alph, data_redim); 
+  mesh(lambda, alph, data_redim);
   set(gca,'xscale','log');
   xlabel('lambda');
   ylabel('alpha');
@@ -257,7 +366,7 @@ end
 
 if MSE_plots_normal
   figure
-  plot(alph, data_redim(:,1)); 
+  plot(alph, data_redim(:,1));
   set(gca,'xscale','log');
   xlabel('alpha');
   ylabel('test mse');
@@ -273,16 +382,3 @@ if test_plots
   stem(t_test(:),y_hat(:), 'r');
   hold off;
 end
-
-% Plot outputs
-% t_test = t(tr_i:end);
-% plot(t_test, y_test);
-% hold on;
-% stem(t_test, y_hat, 'r');
-% hold off;
-% 
-% % Compute test MSE
-% test_MSE = norm(y_test-y_hat,2).^2 ...
-%   /length(y_test);
-% fprintf('Test MSE: %1.10f\n', ...
-%   test_MSE);
