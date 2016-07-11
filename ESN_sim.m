@@ -12,23 +12,26 @@ close all;
 N = [1000];
 M = 1;
 L = 1;
-pr = [0.05];
+pr = [0.1];
 vvv = [1e3 1e2 1e1 1 1e-1 1e-2 1e-3 1e-4 1e-5 1e-6 1e-7 1e-8 1e-9];
-alph = [1e-1 1e-2 1e-3 1e-4 1e-5 1e-6 1e-7 1e-8 1e-9];
-batch_size = 1;
-lambda = 1e-4;
-sr = 0.1;
-distrib = {@rand}; %must be cell                     % name of function for random numbers
+alph = 0;
+batch_size = [5];
+lambda = 1e-2;
+sr = [0.8];
+distrib = {@rand}; %must be cell
 nonlin = {@tanh};
 
 %% Test data
 % test task - nonlinear transform
-T = (pi/3)*1e-2;% make irrational for easy noncyclicality
-ppp = 21;       % points per period
-Nper = 40;      % num periods
+T = 0.02;% make irrational for easy noncyclicality
+ppp = 100;       % points per period
+Nper = 20;      % num periods
 Nt = ppp*Nper;
 dt = T*Nper/Nt;
+% af = exp(round(log(dt))); % simulate out-of-phase sampling
+% dt = dt + af;
 t = 0:dt:T*Nper-dt;
+% Nt = length(t);
 u = (cos(2*pi/T*t)*0.5);
 % Example:
 % Restructure the input into M channels
@@ -61,7 +64,8 @@ tr_struct.Ntrain = ...
   floor(Nt/2)- tr_struct.burn_in;
 tr_struct.mode = 'sgd';
 tr_struct.lrn_mode = 'exact';
-tr_struct.bat_mode = 'snapshot';
+tr_struct.bat_mode = 'normal';
+tr_struct.n_epoch = 1e3;
 %% END USER PARAMS
 %% System params
 % allocate memory
@@ -236,7 +240,7 @@ for i = 1:length(N)
                         W_out*X(:,tr_i:end);
                       % Compute scalar data
                       data(i,j,k,m, ...
-                        n,o,p,q,1) = ...
+                        n,o,p,q,r,s) = ...
                         norm(y_test-y_hat, ...
                         2).^2 / ...
                         length(y_test);

@@ -20,6 +20,7 @@ function [W_out,log] = ESN_train(...
 %% Setup input parameters
 burn_in = tr_struct.burn_in;
 Ntrain = tr_struct.Ntrain;
+Nepoch = tr_struct.n_epoch;
 st_i = burn_in+1;
 stop_i = burn_in + Ntrain;
 ff = tr_struct.ff;
@@ -67,72 +68,83 @@ switch lower(tr_struct.mode)
       case 'normal'
         step = k;
     end
-    for i = st_i:step:(stop_i-k+1)
-      % Different methods for weight
-      % updating
-      %%% Update the step size
-      switch lower(tr_struct.lrn_mode)
-        case 'fixed'
-          % Uses the local lambda var
-          % Uses the same step size
-          % on each iteration.
-          y_hat = W_out(1:L,1:N) ...
-            * X(1:N,i:(i+k-1));
-          W_out(1:L,1:N) ...
-            = (1-alph*2*lambda) ...
-            * W_out(1:L,1:N) ...
-            + 2*lambda/k*(y(1:L,i:(i+k-1))...
-            - y_hat)*X(1:N,i:(i+k-1)).';
-        case 'exact'
-          % Ignores local lambda var
-          % Calculates step size
-          % to minimize the RISE
-          % along the gradient
-          % direction on each cycle
-          y_hat = W_out*X(:,i);
-          
-          grad = 2/k*(W_out ...
-            * X(:,i:(i+k-1))...
-            - y(:,i:(i+k-1))) ...
-            * X(:,i:(i+k-1)).' ...
-            + 2*alph*W_out; % accumulate
-          
-          l_star = 1/2 ...
-            * (2*alph*W_out(:)'*grad(:)...
-            + 2*(y_hat-y(:,i))'...
-            * (grad*X(:,i)))...
-            /((grad*X(:,i))'...
-            * (grad*X(:,i))...
-            + alph*grad(:)'*grad(:));
-          if l_star < 0
-            warning('constraint violated - possibly diverging');
-          end
-          W_out =W_out-l_star*grad;
-        case 'armillo'
-          % Uses two local params
-          % Set to powers of two
-          % to ease HW implementation
-          %
-          % Iterate until finding
-          % step size that decreases
-          % the RISE 'sufficiently',
-          % judged by Armillo condition
-          % Do this on each cycle
-          tau = 0.5;
-          c = 0.5;
-          slope = -grad*grad.';
-          error('Not supported.');
-        otherwise
-          error('Not supported.');
-          
-      end
-
-      %%% Save the running ISE
-      ise((i-burn_in-1)/step+1) ...
-        = norm(y_hat...
-        - y(:,i),2).^2 ...
-        + alph*norm(W_out,'fro').^2;
+    keyboard
+    for ii = 1:Nepoch
+      for i = (st_i+k-1):step:stop_i
+        % Different methods for weight
+        % updating
+        %%% Update the step size
+        switch lower(tr_struct.lrn_mode)
+          case 'fixed'
+            % Uses the local lambda var
+            % Uses the same step size
+            % on each iteration.
+            y_hat = W_out(1:L,1:N) ...
+              * X(1:N,(i-k+1):i);
+            W_out(1:L,1:N) ...
+              = (1-alph*2*lambda) ...
+              * W_out(1:L,1:N) ...
+              + 2*lambda/k*(y(1:L,(i-k+1):i)...
+              - y_hat)*X(1:N,(i-k+1):i).';
+          case 'exact'
+            % Ignores local lambda var
+            % Calculates step size
+            % to minimize the RISE
+            % along the gradient
+            % direction on each cycle
+            y_hat = W_out*X(:,i);
             
+            grad = 2*(W_out ...
+              * X(:,(i-k+1):i)...
+              - y(:,(i-k+1):i)) ...
+              * X(:,(i-k+1):i).' ...
+              + 2*alph*W_out; % accumulate
+            
+            %           l_star = 1/2 ...
+            %             * (2*alph*W_out(:)'*grad(:)...
+            %             + 2*(y_hat-y(:,i))'...
+            %             * (grad*X(:,i)))...
+            %             /((grad*X(:,i))'...
+            %             * (grad*X(:,i))...
+            %             + alph*grad(:)'*grad(:));
+            l_star = norm(grad,'fro').^2 ...
+              / norm(grad*X(:,(i-k+1):i),'fro').^2/2;
+            
+            if l_star < 0
+              warning('constraint violated - possibly diverging');
+            end
+            c = 0;
+            decay_factor = exp(-c*(i-st_i));
+            l_star = l_star * decay_factor;
+            
+            W_out =W_out-l_star*grad;
+          case 'armillo'
+            % Uses two local params
+            % Set to powers of two
+            % to ease HW implementation
+            %
+            % Iterate until finding
+            % step size that decreases
+            % the RISE 'sufficiently',
+            % judged by Armillo condition
+            % Do this on each cycle
+            tau = 0.5;
+            c = 0.5;
+            slope = -grad*grad.';
+            error('Not supported.');
+          otherwise
+            error('Not supported.');
+            
+        end
+        
+        %%% Save the running ISE
+        
+        ise((i-k-burn_in)/step+1) ...
+          = norm(y_hat...
+          - y(:,i),2).^2 ...
+          + alph*norm(W_out,'fro').^2;
+        
+      end
     end
     if nargout > 1
       log = ise;
